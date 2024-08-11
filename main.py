@@ -125,7 +125,7 @@ if __name__ == "__main__":
     sorted_photos_folder = config['Folders']['sorted_photos_folder']
     duplicate_photos_folder = config["Folders"]["duplicate_photos_folder"]
     broken_photos_folder = config["Folders"]["broken_photos_folder"]
-    manual_check_duplicates = config["Folders"]["config["Folders"]["broken_photos_folder"]"]
+    manual_check_duplicates = config["Folders"]["manual_check_duplicates"]
 
     # example file path for testing
     example_file_path_path = config["Files"]["example_file_path"]
