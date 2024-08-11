@@ -114,6 +114,46 @@ def move_duplicates(source_folder, file_names, duplicates_folder):
         except Exception as e:
             print(f"Error moving {file_path}: {e}")
 
+def sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder):
+    # Dictionary to map image hashes to their file names
+    hash_map = defaultdict(list)
+    duplicate_images = {}
+    broken_images = [] # images that either couldn't be processed or cannot be identified as duplicates
+
+    # get all the image names from the source_folder
+    image_names = [f for f in os.listdir(source_folder) if os.path.isfile(os.path.join(source_folder, f))]
+
+    for i in range(len(image_names)):
+        duplicate_evaluation = check_if_duplicate_image(source_folder, image_names[i], hash_map)
+        if duplicate_evaluation is None:
+            broken_images.append(image_names[i])
+            continue;
+        
+        if (duplicate_evaluation["duplicate"]):
+            duplicate_images[duplicate_evaluation["image_name"]] = duplicate_evaluation["image_hash"]
+        elif duplicate_evaluation:
+            hash_map[duplicate_evaluation["image_hash"]] = image_names[i]
+
+    for i in range(len(image_names)):
+        print("Processing image: " + image_names[i])
+        duplicate_evaluation = check_if_duplicate_image(source_folder, image_names[i], hash_map)
+        if duplicate_evaluation is None:
+            broken_images.append(image_names[i])
+            continue;
+        if (duplicate_evaluation["duplicate"]):
+            duplicate_images[duplicate_evaluation["image_name"]] = duplicate_evaluation["image_hash"]
+        elif duplicate_evaluation:
+            hash_map[duplicate_evaluation["image_hash"]] = image_names[i]
+
+    # double check if the hash for the duplicates exist, otherwise add them to the manual check duplicates
+    updated_duplicate_images, manual_check_duplicates = verify_duplicates(duplicate_images, hash_map)
+    print("Duplicates paths: " + str(updated_duplicate_images))
+    print("Files to manually check for duplicates: " + str(manual_check_duplicates))
+
+    move_duplicates(source_folder, manual_check_duplicates, manual_check_duplicates_folder)
+    move_duplicates(source_folder, broken_images, broken_photos_folder)
+    move_duplicates(source_folder, updated_duplicate_images, duplicate_photos_folder)
+
 
 if __name__ == "__main__":
     # Load config
@@ -125,7 +165,7 @@ if __name__ == "__main__":
     sorted_photos_folder = config['Folders']['sorted_photos_folder']
     duplicate_photos_folder = config["Folders"]["duplicate_photos_folder"]
     broken_photos_folder = config["Folders"]["broken_photos_folder"]
-    manual_check_duplicates = config["Folders"]["manual_check_duplicates"]
+    manual_check_duplicates_folder = config["Folders"]["manual_check_duplicates_folder"]
 
     # example file path for testing
     example_file_path_path = config["Files"]["example_file_path"]
@@ -135,31 +175,9 @@ if __name__ == "__main__":
     duplicate_images = {}
     broken_images = [] # images that either couldn't be processed or cannot be identified as duplicates
 
-    # get all the image names from the source_folder
-    image_names = [f for f in os.listdir(source_folder) if os.path.isfile(os.path.join(source_folder, f))]
-    print("Number of images: " + str(len(image_names)))
+    # Sort duplicates into specified folders
+    sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder)
 
-    for i in range(len(image_names)):
-        duplicate_evaluation = check_if_duplicate_image(source_folder, image_names[i], hash_map)
-        if duplicate_evaluation is None:
-            broken_images.append(image_names[i])
-            continue;
-        if (duplicate_evaluation["duplicate"]):
-            duplicate_images[duplicate_evaluation["image_name"]] = duplicate_evaluation["image_hash"]
-        elif duplicate_evaluation:
-            hash_map[duplicate_evaluation["image_hash"]] = image_names[i]
-
-    #print("Hash map: " + str(hash_map))
-    #print("Duplicates paths: " + str(duplicate_images))
-
-    # double check if the hash for the duplicates exist, otherwise add them to the manual check duplicates
-    updated_duplicate_images, manual_check_duplicates = verify_duplicates(duplicate_images, hash_map)
-    print("Duplicates paths: " + str(updated_duplicate_images))
-    print("Files to manually check for duplicates: " + str(manual_check_duplicates))
-
-    move_duplicates(source_folder, manual_check_duplicates, manual_check_duplicates)
-    move_duplicates(source_folder, broken_images, broken_photos_folder)
-    move_duplicates(source_folder, updated_duplicate_images, duplicate_photos_folder)
 
 
 """
