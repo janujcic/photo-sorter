@@ -17,6 +17,28 @@ def extract_exif(file_path):
     # Convert EXIF data to a more readable dictionary format
     return {"exif_tags":{ExifTags.TAGS.get(tag): value for tag, value in exif_data.items()} if exif_data else None, "exif_data":exif_data}
 
+def convert_to_degrees(value):
+    # Convert the tuple to degrees
+    d, m, s = value
+    return d + (m / 60.0) + (s / 3600.0)
+
+def extract_lat_lon(gps_data):
+    # Extract latitude and longitude
+    lat = eval(gps_data['GPSLatitude'])
+    lon = eval(gps_data['GPSLongitude'])
+    
+    # Convert to decimal degrees
+    lat_decimal = convert_to_degrees(lat)
+    lon_decimal = convert_to_degrees(lon)
+    
+    # Apply the hemisphere correction
+    if gps_data['GPSLatitudeRef'] == 'S':
+        lat_decimal = -lat_decimal
+    if gps_data['GPSLongitudeRef'] == 'W':
+        lon_decimal = -lon_decimal
+    
+    return lat_decimal, lon_decimal
+
 def extract_image_gps_info(image_path):
     image = Image.open(image_path)
     image.verify()
@@ -38,7 +60,7 @@ def extract_image_gps_info(image_path):
                 geo_tagging_info[gps_keys[k]] = str(v)
             except IndexError:
                 pass
-        return geo_tagging_info
+        return extract_lat_lon(geo_tagging_info)
 
 
 def get_image_hash(image_path):
