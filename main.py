@@ -9,6 +9,7 @@ from GPSPhoto import gpsphoto
 import imagehash
 from collections import defaultdict
 import re
+import reverse_geocode
 
 def extract_exif(file_path):
     image = Image.open(file_path)
@@ -62,6 +63,8 @@ def extract_image_gps_info(image_path):
                 pass
         return extract_lat_lon(geo_tagging_info)
 
+def get_data_from_geocode(geo_coords):
+    return reverse_geocode.get(geo_coords)
 
 def get_image_hash(image_path):
     try:
@@ -223,6 +226,9 @@ if __name__ == "__main__":
     print("File location: " + example_file_path)
     image_data = extract_exif(example_file_path)
     print("File tags: " + str(image_data["exif_tags"]["DateTime"]))
+    
     image_gps = extract_image_gps_info(example_file_path)
     print("File GPS data: " + str(image_gps))
 
+    geo_data = get_data_from_geocode(image_gps)
+    print(geo_data)
