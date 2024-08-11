@@ -10,8 +10,6 @@ import imagehash
 from collections import defaultdict
 import re
 
-pillow_heif.register_heif_opener() # opener for .heic files
-
 def extract_exif(file_path):
     image = Image.open(file_path)
     exif_data = image.getexif()
@@ -19,21 +17,29 @@ def extract_exif(file_path):
     # Convert EXIF data to a more readable dictionary format
     return {"exif_tags":{ExifTags.TAGS.get(tag): value for tag, value in exif_data.items()} if exif_data else None, "exif_data":exif_data}
 
-def extract_gps_info(exif_data):
-    # Find the tag number for GPSInfo
-    gps_info_tag = next(tag for tag, name in ExifTags.TAGS.items() if name == 'GPSInfo')
-    print(gps_info_tag)
+def extract_image_gps_info(image_path):
+    image = Image.open(image_path)
+    image.verify()
+    exif = image.getexif().get_ifd(0x8825)
 
-    # Extract GPSInfo using the tag number directly
-    gps_info = exif_data.get(gps_info_tag)
-    print(gps_info)
-    if not gps_info:
-        print("No GPS data found.")
-        return None
+    geo_tagging_info = {}
+    if not exif:
+        raise ValueError("No EXIF metadata found")
+    else:
+        gps_keys = ['GPSVersionID', 'GPSLatitudeRef', 'GPSLatitude', 'GPSLongitudeRef', 'GPSLongitude',
+                    'GPSAltitudeRef', 'GPSAltitude', 'GPSTimeStamp', 'GPSSatellites', 'GPSStatus', 'GPSMeasureMode',
+                    'GPSDOP', 'GPSSpeedRef', 'GPSSpeed', 'GPSTrackRef', 'GPSTrack', 'GPSImgDirectionRef',
+                    'GPSImgDirection', 'GPSMapDatum', 'GPSDestLatitudeRef', 'GPSDestLatitude', 'GPSDestLongitudeRef',
+                    'GPSDestLongitude', 'GPSDestBearingRef', 'GPSDestBearing', 'GPSDestDistanceRef', 'GPSDestDistance',
+                    'GPSProcessingMethod', 'GPSAreaInformation', 'GPSDateStamp', 'GPSDifferential']
 
-    gps_data = exif_data.get_ifd(gps_info)
-    
-    return gps_data
+        for k, v in exif.items():
+            try:
+                geo_tagging_info[gps_keys[k]] = str(v)
+            except IndexError:
+                pass
+        return geo_tagging_info
+
 
 def get_image_hash(image_path):
     try:
@@ -164,10 +170,14 @@ def sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos
     move_files(source_folder, updated_duplicate_images, duplicate_photos_folder)
 
 
+
 if __name__ == "__main__":
     # Load config
     config = configparser.ConfigParser()
     config.read('config.ini')
+
+    pillow_heif.register_heif_opener() # opener for .heic files
+
 
     # get all the folder configurations
     source_folder = config['Folders']['source_folder']
@@ -177,7 +187,7 @@ if __name__ == "__main__":
     manual_check_duplicates_folder = config["Folders"]["manual_check_duplicates_folder"]
 
     # example file path for testing
-    example_file_path_path = config["Files"]["example_file_path"]
+    example_file_path = config["Files"]["example_file_path"]
 
     # Dictionary to map image hashes to their file names
     hash_map = defaultdict(list)
@@ -188,12 +198,9 @@ if __name__ == "__main__":
     #sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder)
 
 
+    print("File location: " + example_file_path)
+    image_data = extract_exif(example_file_path)
+    print("File tags: " + str(image_data["exif_tags"]["DateTime"]))
+    image_gps = extract_image_gps_info(example_file_path)
+    print("File GPS data: " + str(image_gps))
 
-
-"""
-print("File location: " + example_file_path)
-image_data = extract_exif(example_file_path)
-print("File tags: " + str(image_data["exif_tags"]))
-image_gps = extract_gps_info(image_data["exif_data"])
-print("File GPS data: " + str(image_gps))
-"""
