@@ -105,11 +105,20 @@ def verify_duplicates(duplicates_list, hash_map):
     return duplicates_list, hash_not_found
 
 
-def move_duplicates(source_folder, file_names, duplicates_folder):
+def move_files(source_folder, file_names, duplicates_folder):
     for file_name in file_names:
         file_path = os.path.join(source_folder, file_name)
         try:
             shutil.move(file_path, duplicates_folder)
+            print(f"Moved duplicate: {file_path}")
+        except Exception as e:
+            print(f"Error moving {file_path}: {e}")
+
+def copy_files(source_folder, file_names, target_folder):
+    for file_name in file_names:
+        file_path = os.path.join(source_folder, file_name)
+        try:
+            shutil.copy(file_path, target_folder)
             print(f"Moved duplicate: {file_path}")
         except Exception as e:
             print(f"Error moving {file_path}: {e}")
@@ -150,9 +159,9 @@ def sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos
     print("Duplicates paths: " + str(updated_duplicate_images))
     print("Files to manually check for duplicates: " + str(manual_check_duplicates))
 
-    move_duplicates(source_folder, manual_check_duplicates, manual_check_duplicates_folder)
-    move_duplicates(source_folder, broken_images, broken_photos_folder)
-    move_duplicates(source_folder, updated_duplicate_images, duplicate_photos_folder)
+    move_files(source_folder, manual_check_duplicates, manual_check_duplicates_folder)
+    move_files(source_folder, broken_images, broken_photos_folder)
+    move_files(source_folder, updated_duplicate_images, duplicate_photos_folder)
 
 
 if __name__ == "__main__":
@@ -176,7 +185,8 @@ if __name__ == "__main__":
     broken_images = [] # images that either couldn't be processed or cannot be identified as duplicates
 
     # Sort duplicates into specified folders
-    sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder)
+    #sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder)
+
 
 
 
