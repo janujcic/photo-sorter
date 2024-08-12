@@ -11,11 +11,16 @@ from collections import defaultdict
 import re
 import reverse_geocode
 import ffmpeg
+import static_ffmpeg
+static_ffmpeg.add_paths()
 
 def extract_exif(file_path):
+
+    pillow_heif.register_heif_opener()
+
     file_extension = os.path.splitext(file_path)[1].lower()
 
-    if file_extension == '.heic' or file_extension == '.HEIC':
+    if file_extension == '.heic':
         # Use pillow-heif for HEIC format
         heif_image = pillow_heif.open_heif(file_path)
         exif_data = heif_image.getexif()
@@ -145,13 +150,18 @@ def verify_duplicates(duplicates_list, hash_map):
     return duplicates_list, hash_not_found
 
 
-def move_files(source_folder, file_names, target_folder):
+def move_files(source_folder, file_names, target_folder, duplicate_folder=""):
     for file_name in file_names:
         file_path = os.path.join(source_folder, file_name)
         destination_path = os.path.join(target_folder, file_name)
 
         if os.path.exists(destination_path):
-            print(f"File {file_name} already exists in {target_folder}. Skipping...")
+            
+            if duplicate_folder != "":
+                print(f"File {file_name} already exists in {target_folder}. Copying to the duplicate folder.")
+                shutil.move(file_path, duplicate_folder)
+            else:
+                print(f"File {file_name} already exists in {target_folder}.")
             continue
 
         try:
@@ -269,7 +279,7 @@ def update_datetime_and_country_folder(parent_folder_path, original_folder_name,
     rename_folder(parent_folder_path, original_folder_name, new_folder_name)
                     
 
-def move_file_to_specific_datetime_folder(source_folder, parent_target_folder, file_name, file_date, file_country):
+def move_file_to_specific_datetime_folder(source_folder, parent_target_folder, file_name, file_date, file_country, duplicate_folder=""):
     file_year_month = file_date[0:6]
     folder_names = [f for f in os.listdir(parent_target_folder) if os.path.isdir(os.path.join(parent_target_folder, f))]
     if (len(folder_names) > 0):
@@ -277,7 +287,7 @@ def move_file_to_specific_datetime_folder(source_folder, parent_target_folder, f
             folder_year_month = folder_name.split("_")[0] + folder_name.split("_")[1]
             if folder_year_month == file_year_month:
                 target_folder = os.path.join(parent_target_folder, folder_name)
-                move_files(source_folder, [file_name], target_folder)
+                move_files(source_folder, [file_name], target_folder, duplicate_folder)
                 update_datetime_and_country_folder(parent_target_folder, folder_name, file_country)
                 return
     
@@ -285,10 +295,10 @@ def move_file_to_specific_datetime_folder(source_folder, parent_target_folder, f
     folder_name = file_date[0:4] + "_" +  file_date[4:6] + "_" + file_country
     create_datetime_and_country_folder(parent_target_folder, folder_date, file_country)
     target_folder = os.path.join(parent_target_folder, folder_name)
-    move_files(source_folder, [file_name], target_folder)
+    move_files(source_folder, [file_name], target_folder, duplicate_folder)
               
 
-def sort_pictures_into_folders(source_folder, target_folder):
+def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""):
 
     file_names = [f for f in os.listdir(source_folder) if os.path.isfile(os.path.join(source_folder, f))]
 
@@ -302,15 +312,22 @@ def sort_pictures_into_folders(source_folder, target_folder):
                 file_split = file_name.split("_")
                 file_date = file_split[1]
                 file_country = file_split[0]
-                move_file_to_specific_datetime_folder(source_folder, target_folder, file_name, file_date, file_country)
+                move_file_to_specific_datetime_folder(source_folder, target_folder, file_name, file_date, file_country, duplicate_folder)
                 continue
 
             file_path = os.path.join(source_folder, file_name)
-            
+            file_extension = os.path.splitext(file_path)[1].lower()
+            if (file_extension == ".mov" or file_extension == ".mp4" or file_extension == ".mp3"):
+                video_data = get_media_created(file_path)
+                print(video_data)
+                print("Videos have to be processed differently.")
+                continue
+
             image_data = extract_exif(file_path)
             if (image_data == None):
                 print("Skipping since metadata is not found")
                 #new_file_name = create_file_name(file_date, file_time, "")
+                continue
             
             else:
                 image_datetime = image_data["DateTime"]
@@ -326,7 +343,7 @@ def sort_pictures_into_folders(source_folder, target_folder):
 
             
             rename_file(source_folder, file_name, new_file_name)
-            move_file_to_specific_datetime_folder(source_folder, target_folder, new_file_name, file_date, file_country)
+            move_file_to_specific_datetime_folder(source_folder, target_folder, new_file_name, file_date, file_country, duplicate_folder)
 
         except Exception as e:
             print(f"Error processing file {file_name}: {e}") 
@@ -358,6 +375,6 @@ if __name__ == "__main__":
     # Sort duplicates into specified folders
     #sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder)
 
-    sort_pictures_into_folders(source_folder, sorted_photos_folder)
+    #sort_pictures_into_folders(source_folder, sorted_photos_folder, duplicate_photos_folder)
 
-    #print(get_media_created(example_file_path))
+    print(get_media_created(example_file_path))
