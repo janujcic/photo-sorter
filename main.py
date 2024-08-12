@@ -12,11 +12,19 @@ import re
 import reverse_geocode
 
 def extract_exif(file_path):
-    image = Image.open(file_path)
-    exif_data = image.getexif()
+    file_extension = os.path.splitext(file_path)[1].lower()
+
+    if file_extension == '.heic':
+        # Use pillow-heif for HEIC format
+        heif_image = pillow_heif.open_heif(file_path)
+        exif_data = heif_image.getexif()
+    else:
+        # Use Pillow for other formats
+        image = Image.open(file_path)
+        exif_data = image._getexif()
 
     # Convert EXIF data to a more readable dictionary format
-    return {"exif_tags":{ExifTags.TAGS.get(tag): value for tag, value in exif_data.items()} if exif_data else None, "exif_data":exif_data}
+    return {ExifTags.TAGS.get(tag): value for tag, value in exif_data.items()} if exif_data else None
 
 def convert_to_degrees(value):
     # Convert the tuple to degrees
@@ -195,6 +203,54 @@ def sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos
     move_files(source_folder, updated_duplicate_images, duplicate_photos_folder)
 
 
+def create_file_name(image_date, image_time, file_geo_data):
+    return file_geo_data["country_code"] + "_" + image_date + "_" + image_time
+
+def rename_file(path, original_name, new_name):
+    file_extension = original_name.split(".")[1]
+
+    old_path = os.path.join(path, original_name)
+    new_path = os.path.join(path, new_name + "." + file_extension)
+    
+    
+    os.rename(old_path, new_path)
+
+    print(original_name + " renamed to -> " + new_name)
+
+def sort_pictures_into_folders(source_folder, target_folder):
+
+    file_names = [f for f in os.listdir(source_folder) if os.path.isfile(os.path.join(source_folder, f))]
+
+    for file_name in file_names:
+        print(file_name)
+
+        try:
+            check_file_name_changed = file_name.split("_")
+            if len(check_file_name_changed) == 3:
+                continue
+
+            file_path = os.path.join(source_folder, file_name)
+            
+            image_data = extract_exif(file_path)
+            image_datetime = image_data["DateTime"]
+            image_date = (image_datetime.split(" "))[0].replace(":", "")
+            image_time = (image_datetime.split(" "))[1].replace(":", "")
+
+            image_gps = extract_image_gps_info(file_path)
+            print("File GPS data: " + str(image_gps))
+
+            image_geo_data = get_data_from_geocode(image_gps)
+            print(image_geo_data)
+
+            new_image_name = create_file_name(image_date, image_time, image_geo_data)
+
+            rename_file(source_folder, file_name, new_image_name)
+
+        except Exception as e:
+            print(f"Error processing file {file_name}: {e}") 
+        
+
+
 
 if __name__ == "__main__":
     # Load config
@@ -222,13 +278,4 @@ if __name__ == "__main__":
     # Sort duplicates into specified folders
     #sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder)
 
-
-    print("File location: " + example_file_path)
-    image_data = extract_exif(example_file_path)
-    print("File tags: " + str(image_data["exif_tags"]["DateTime"]))
-    
-    image_gps = extract_image_gps_info(example_file_path)
-    print("File GPS data: " + str(image_gps))
-
-    geo_data = get_data_from_geocode(image_gps)
-    print(geo_data)
+    sort_pictures_into_folders(source_folder, sorted_photos_folder)
