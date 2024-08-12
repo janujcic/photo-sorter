@@ -11,6 +11,8 @@ from collections import defaultdict
 import re
 import reverse_geocode
 import ffmpeg
+from random import randint
+import time
 import static_ffmpeg
 static_ffmpeg.add_paths()
 
@@ -158,17 +160,20 @@ def move_files(source_folder, file_names, target_folder, duplicate_folder=""):
         if os.path.exists(destination_path):
             
             if duplicate_folder != "":
-                print(f"File {file_name} already exists in {target_folder}. Copying to the duplicate folder.")
-                shutil.move(file_path, duplicate_folder)
+                destination_path = os.path.join(duplicate_folder, file_name)
+                print(f"File {file_name} already exists in {target_folder}. Moving to the duplicate folder.")
+                shutil.move(file_path, destination_path)
+
+                
             else:
                 print(f"File {file_name} already exists in {target_folder}.")
             continue
 
         try:
-            shutil.move(file_path, target_folder)
+            shutil.move(file_path, destination_path)
             print(f"Moved file: {file_path}")
         except Exception as e:
-            print(f"Error moving {file_path}: {e}")
+            print(f"Error moving {file_path} to {destination_path}: {e}")
 
 def copy_files(source_folder, file_names, target_folder):
     for file_name in file_names:
@@ -183,7 +188,7 @@ def copy_files(source_folder, file_names, target_folder):
             shutil.copy(file_path, destination_path)
             print(f"Copied file: {file_path}")
         except Exception as e:
-            print(f"Error moving {file_path}: {e}")
+            print(f"Error moving {file_path} to {destination_path}: {e}")
 
 def sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder):
     # Dictionary to map image hashes to their file names
@@ -233,20 +238,28 @@ def create_file_name(image_date, image_time, file_geo_data):
         return image_date + "_" + image_time
 
 def rename_file(path, original_name, new_name):
-    file_extension = original_name.split(".")[1]
 
     old_path = os.path.join(path, original_name)
-    new_path = os.path.join(path, new_name + "." + file_extension)
     
     
+    if ("." in original_name):
+        file_extension = original_name.split(".")[1]
+        new_name += "." + file_extension
+    
+    new_path = os.path.join(path, new_name)
+    
+    print(old_path)
+    print(new_path)
     os.rename(old_path, new_path)
 
     print(original_name + " renamed to -> " + new_name)
+    return new_name
 
 
 def rename_folder(path, original_name, new_name):
     old_path = os.path.join(path, original_name)
     new_path = os.path.join(path, new_name)
+    
     os.rename(old_path, new_path)
     print(original_name + " folder renamed to -> " + new_name)
 
@@ -286,9 +299,30 @@ def move_file_to_specific_datetime_folder(source_folder, parent_target_folder, f
         for folder_name in folder_names:
             folder_year_month = folder_name.split("_")[0] + folder_name.split("_")[1]
             if folder_year_month == file_year_month:
-                target_folder = os.path.join(parent_target_folder, folder_name)
-                move_files(source_folder, [file_name], target_folder, duplicate_folder)
-                update_datetime_and_country_folder(parent_target_folder, folder_name, file_country)
+                current_folder_path = os.path.join(parent_target_folder, folder_name)
+                print(current_folder_path)
+                if (file_country == ""):
+                    # find something taken on the same day and use that country
+                    subfolder_files = [f for f in os.listdir(current_folder_path) if os.path.isfile(os.path.join(current_folder_path, f))]
+                    
+                    for subfolder_file in subfolder_files:
+                        
+                        existing_file_date = subfolder_file.split("_")[1]
+                        if file_date == existing_file_date:
+                            same_day_file_country = subfolder_file.split("_")[0]
+                            new_file_name = same_day_file_country + "_" + file_name
+                            new_file_name = rename_file(source_folder, file_name, new_file_name)
+                           
+                            move_files(source_folder, [new_file_name], current_folder_path, duplicate_folder)
+                            return
+
+                    move_files(source_folder, [file_name], current_folder_path, duplicate_folder) # no similar file made on that day, don't use the country
+ 
+
+                else:
+                    target_folder = os.path.join(parent_target_folder, folder_name)
+                    move_files(source_folder, [file_name], target_folder, duplicate_folder)
+                    update_datetime_and_country_folder(parent_target_folder, folder_name, file_country)
                 return
     
     folder_date = file_date[0:4] + "_" +  file_date[4:6]
@@ -296,7 +330,9 @@ def move_file_to_specific_datetime_folder(source_folder, parent_target_folder, f
     create_datetime_and_country_folder(parent_target_folder, folder_date, file_country)
     target_folder = os.path.join(parent_target_folder, folder_name)
     move_files(source_folder, [file_name], target_folder, duplicate_folder)
-              
+
+
+
 
 def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""):
 
@@ -304,10 +340,11 @@ def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""
 
     i = 0
     for file_name in file_names:
-        print(file_name)
 
         try:
+
             check_file_name_changed = file_name.split("_")
+            # if the file already has the correct name, then just move it {Country Code}_{YYYYMMDD}_{HH:MM:SS}
             if len(check_file_name_changed) == 3:
                 file_split = file_name.split("_")
                 file_date = file_split[1]
@@ -316,11 +353,28 @@ def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""
                 continue
 
             file_path = os.path.join(source_folder, file_name)
+
             file_extension = os.path.splitext(file_path)[1].lower()
+
+            # processing for videos
             if (file_extension == ".mov" or file_extension == ".mp4" or file_extension == ".mp3"):
+                print(file_name)
+                i += 1
+    
                 video_data = get_media_created(file_path)
-                print(video_data)
-                print("Videos have to be processed differently.")
+                video_date = video_data.split("T")[0].replace("-", "")
+                video_time = ((video_data.split("T")[1]).split(".")[0]).replace(":", "")
+                new_video_name = create_file_name(video_date, video_time, "")
+                print("File name: " + file_name)
+                new_video_name = rename_file(source_folder, file_name, new_video_name)
+                
+
+                move_file_to_specific_datetime_folder(source_folder, target_folder, new_video_name, video_date, "", duplicate_folder)
+                
+                
+                continue
+                
+            else:
                 continue
 
             image_data = extract_exif(file_path)
@@ -367,14 +421,9 @@ if __name__ == "__main__":
     # example file path for testing
     example_file_path = config["Files"]["example_file_path"]
 
-    # Dictionary to map image hashes to their file names
-    hash_map = defaultdict(list)
-    duplicate_images = {}
-    broken_images = [] # images that either couldn't be processed or cannot be identified as duplicates
-
     # Sort duplicates into specified folders
     #sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder)
 
-    #sort_pictures_into_folders(source_folder, sorted_photos_folder, duplicate_photos_folder)
+    sort_pictures_into_folders(source_folder, sorted_photos_folder, duplicate_photos_folder)
 
-    print(get_media_created(example_file_path))
+    #print(get_media_created(example_file_path))
