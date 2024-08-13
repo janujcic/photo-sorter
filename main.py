@@ -4,15 +4,14 @@ import shutil
 from PIL import Image, ExifTags
 import pillow_heif
 from PIL.ExifTags import TAGS, GPSTAGS
-from geopy.geocoders import Nominatim
-from GPSPhoto import gpsphoto
 import imagehash
 from collections import defaultdict
 import re
 import reverse_geocode
 import ffmpeg
 from random import randint
-import time
+from fractions import Fraction
+import piexif
 import static_ffmpeg
 static_ffmpeg.add_paths()
 
@@ -23,16 +22,62 @@ def extract_exif(file_path):
     file_extension = os.path.splitext(file_path)[1].lower()
 
     if file_extension == '.heic':
-        # Use pillow-heif for HEIC format
+         # Use pillow-heif for HEIC format
         heif_image = pillow_heif.open_heif(file_path)
-        exif_data = heif_image.getexif()
+        exif_data = heif_image.info.get('exif')
+        
+        if exif_data:
+            # Decode the EXIF bytes using piexif
+            exif_dict = piexif.load(exif_data)
+        else:
+            exif_dict = None
+
+        exif_dict = extract_exif_data(exif_dict)
     else:
-        # Use Pillow for other formats
+         # Use Pillow for other formats
         image = Image.open(file_path)
         exif_data = image._getexif()
+        exif_dict = {ExifTags.TAGS.get(tag): value for tag, value in exif_data.items()} if exif_data else None
 
     # Convert EXIF data to a more readable dictionary format
-    return {ExifTags.TAGS.get(tag): value for tag, value in exif_data.items()} if exif_data else None
+    return exif_dict
+
+def extract_exif_data(exif_dict):
+    result = {}
+
+    # Extract the DateTime
+    if '0th' in exif_dict and 306 in exif_dict['0th']:
+        result['DateTime'] = exif_dict['0th'][306].decode() if isinstance(exif_dict['0th'][306], bytes) else exif_dict['0th'][306]
+    
+    # Extract GPS Data
+    gps_info = {}
+    if 'GPS' in exif_dict:
+        gps_data = exif_dict['GPS']
+
+        # Latitude
+        if 1 in gps_data and 2 in gps_data:
+            latitude_ref = gps_data[1].decode() if isinstance(gps_data[1], bytes) else gps_data[1]
+            latitude = [float(Fraction(coord[0], coord[1])) for coord in gps_data[2]]
+            latitude = latitude[0] + latitude[1]/60 + latitude[2]/3600
+            gps_info['Latitude'] = latitude if latitude_ref == 'N' else -latitude
+        
+        # Longitude
+        if 3 in gps_data and 4 in gps_data:
+            longitude_ref = gps_data[3].decode() if isinstance(gps_data[3], bytes) else gps_data[3]
+            longitude = [float(Fraction(coord[0], coord[1])) for coord in gps_data[4]]
+            longitude = longitude[0] + longitude[1]/60 + longitude[2]/3600
+            gps_info['Longitude'] = longitude if longitude_ref == 'E' else -longitude
+
+        # Altitude
+        if 5 in gps_data and 6 in gps_data:
+            altitude = float(Fraction(gps_data[6][0], gps_data[6][1]))
+            gps_info['Altitude'] = altitude if gps_data[5] == 0 else -altitude
+    
+    # Include GPS info in the result if available
+    if gps_info:
+        result['GPS'] = gps_info
+    
+    return result
 
 def convert_to_degrees(value):
     # Convert the tuple to degrees
@@ -334,7 +379,7 @@ def move_file_to_specific_datetime_folder(source_folder, parent_target_folder, f
 
 
 
-def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""):
+def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder="", unsorted_folder=""):
 
     file_names = [f for f in os.listdir(source_folder) if os.path.isfile(os.path.join(source_folder, f))]
 
@@ -353,7 +398,6 @@ def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""
                 continue
 
             file_path = os.path.join(source_folder, file_name)
-
             file_extension = os.path.splitext(file_path)[1].lower()
 
             # processing for videos
@@ -367,35 +411,36 @@ def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""
                 new_video_name = create_file_name(video_date, video_time, "")
                 print("File name: " + file_name)
                 new_video_name = rename_file(source_folder, file_name, new_video_name)
-                
-
                 move_file_to_specific_datetime_folder(source_folder, target_folder, new_video_name, video_date, "", duplicate_folder)
                 
-                
                 continue
-                
-            else:
+            
+            image_data = extract_exif(file_path)
+
+            if image_data == None:
+                move_files(source_folder, [file_name], unsorted_folder, duplicate_folder)
                 continue
 
-            image_data = extract_exif(file_path)
-            if (image_data == None):
-                print("Skipping since metadata is not found")
-                #new_file_name = create_file_name(file_date, file_time, "")
-                continue
+            elif (file_extension == ".heic"):
+                image_datetime = image_data["DateTime"]
+                file_date = (image_datetime.split(" "))[0].replace(":", "")
+                file_time = (image_datetime.split(" "))[1].replace(":", "")
+                image_gps = (image_data["GPS"]["Latitude"], image_data["GPS"]["Longitude"])
+                image_geo_data = get_data_from_geocode(image_gps)
+                new_file_name = create_file_name(file_date, file_time, image_geo_data)
             
             else:
                 image_datetime = image_data["DateTime"]
                 file_date = (image_datetime.split(" "))[0].replace(":", "")
                 file_time = (image_datetime.split(" "))[1].replace(":", "")
                 image_gps = extract_image_gps_info(file_path)
-                print("File GPS data: " + str(image_gps))
-
                 image_geo_data = get_data_from_geocode(image_gps)
-                print(image_geo_data)
-
                 new_file_name = create_file_name(file_date, file_time, image_geo_data)
 
-            
+            i += 1
+            if (i > 10):
+                break
+            file_country = image_geo_data["country_code"]
             rename_file(source_folder, file_name, new_file_name)
             move_file_to_specific_datetime_folder(source_folder, target_folder, new_file_name, file_date, file_country, duplicate_folder)
 
@@ -416,7 +461,7 @@ if __name__ == "__main__":
     sorted_photos_folder = config['Folders']['sorted_photos_folder']
     duplicate_photos_folder = config["Folders"]["duplicate_photos_folder"]
     broken_photos_folder = config["Folders"]["broken_photos_folder"]
-    manual_check_duplicates_folder = config["Folders"]["manual_check_duplicates_folder"]
+    unsorted_folder = config["Folders"]["unsorted_folder"]
 
     # example file path for testing
     example_file_path = config["Files"]["example_file_path"]
@@ -424,6 +469,6 @@ if __name__ == "__main__":
     # Sort duplicates into specified folders
     #sort_duplicates(source_folder, manual_check_duplicates_folder, broken_photos_folder, duplicate_photos_folder)
 
-    sort_pictures_into_folders(source_folder, sorted_photos_folder, duplicate_photos_folder)
+    sort_pictures_into_folders(source_folder, sorted_photos_folder, duplicate_photos_folder, unsorted_folder)
 
-    #print(get_media_created(example_file_path))
+    #print(extract_exif(example_file_path))
