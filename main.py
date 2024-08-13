@@ -12,6 +12,7 @@ import ffmpeg
 from random import randint
 from fractions import Fraction
 import piexif
+from typing import List
 import static_ffmpeg
 static_ffmpeg.add_paths()
 
@@ -196,29 +197,78 @@ def verify_duplicates(duplicates_list, hash_map):
 
     return duplicates_list, hash_not_found
 
+def move_file_to_folder(source: str, destination: str):
+    """Move a file from the source path to the destination path."""
+    try:
+        shutil.move(source, destination)
+        print(f"Moved file: {source} to {destination}")
+    except Exception as e:
+        print(f"Error moving {source} to {destination}: {e}")
 
-def move_files(source_folder, file_names, target_folder, duplicate_folder=""):
+def handle_existing_file(existing_file: str, new_file: str, duplicate_folder: str, target_folder: str, existing_is_higher_quality: bool):
+    """Handle cases where a file with the same name but different extension exists."""
+    existing_file_name = os.path.basename(existing_file)  # Extract just the file name
+
+    if existing_is_higher_quality:
+        if duplicate_folder:
+            duplicate_path = os.path.join(duplicate_folder, os.path.basename(new_file))
+            move_file_to_folder(new_file, duplicate_path)
+            print(f"Higher quality file {existing_file} already exists in {target_folder}. Copying to {duplicate_path}.")
+            return True
+        print(f"Higher quality file {existing_file} already exists in {target_folder}. Skipping {new_file}.")
+        return True
+    else:
+        if duplicate_folder:
+            duplicate_path = os.path.join(duplicate_folder, existing_file_name)
+            print(f"Existing folder {duplicate_path}")
+            move_file_to_folder(existing_file, duplicate_path)
+            print(f"Existing file {existing_file} is lower quality in {target_folder}. Moving it to: {duplicate_path}.")
+        else:
+            os.remove(existing_file)
+        return False
+
+def move_files(source_folder: str, file_names: List[str], target_folder: str, duplicate_folder: str = ""):
+    """Move files from source to target folder, handling duplicates based on file quality."""
+    quality_priority = ['.heic', '.jpeg', '.jpg']
+
     for file_name in file_names:
-        file_path = os.path.join(source_folder, file_name)
+        file_base, file_ext = os.path.splitext(file_name)
+        file_ext = file_ext.lower()
+
+        source_path = os.path.join(source_folder, file_name)
         destination_path = os.path.join(target_folder, file_name)
 
-        if os.path.exists(destination_path):
-            
-            if duplicate_folder != "":
-                destination_path = os.path.join(duplicate_folder, file_name)
-                print(f"File {file_name} already exists in {target_folder}. Moving to the duplicate folder.")
-                shutil.move(file_path, destination_path)
+        moved_to_duplicate = False
 
-                
+        # Check for existing files with different extensions in the target folder
+        for ext in quality_priority:
+            if ext != file_ext:
+                alt_file_name = f"{file_base}{ext}"
+                alt_file_path = os.path.join(target_folder, alt_file_name)
+
+                if os.path.exists(alt_file_path):
+                    is_higher_quality = quality_priority.index(file_ext) > quality_priority.index(ext)
+                    moved_to_duplicate = handle_existing_file(
+                        alt_file_path, source_path, duplicate_folder, target_folder, is_higher_quality
+                    )
+                    if moved_to_duplicate:
+                        break
+
+        if moved_to_duplicate:
+            continue
+
+        # Check if the exact file already exists in the target folder
+        if os.path.exists(destination_path):
+            if duplicate_folder:
+                duplicate_path = os.path.join(duplicate_folder, file_name)
+                print(f"File {file_name} already exists in {target_folder}. Moving to duplicate folder.")
+                move_file_to_folder(source_path, duplicate_path)
             else:
                 print(f"File {file_name} already exists in {target_folder}.")
             continue
 
-        try:
-            shutil.move(file_path, destination_path)
-            print(f"Moved file: {file_path}")
-        except Exception as e:
-            print(f"Error moving {file_path} to {destination_path}: {e}")
+        # Move the file to the target folder
+        move_file_to_folder(source_path, destination_path)
 
 def copy_files(source_folder, file_names, target_folder):
     for file_name in file_names:
@@ -345,13 +395,10 @@ def move_file_to_specific_datetime_folder(source_folder, parent_target_folder, f
             folder_year_month = folder_name.split("_")[0] + folder_name.split("_")[1]
             if folder_year_month == file_year_month:
                 current_folder_path = os.path.join(parent_target_folder, folder_name)
-                print(current_folder_path)
                 if (file_country == ""):
                     # find something taken on the same day and use that country
                     subfolder_files = [f for f in os.listdir(current_folder_path) if os.path.isfile(os.path.join(current_folder_path, f))]
-                    
                     for subfolder_file in subfolder_files:
-                        
                         existing_file_date = subfolder_file.split("_")[1]
                         if file_date == existing_file_date:
                             same_day_file_country = subfolder_file.split("_")[0]
@@ -387,7 +434,6 @@ def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""
     for file_name in file_names:
 
         try:
-
             check_file_name_changed = file_name.split("_")
             # if the file already has the correct name, then just move it {Country Code}_{YYYYMMDD}_{HH:MM:SS}
             if len(check_file_name_changed) == 3:
@@ -396,15 +442,12 @@ def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""
                 file_country = file_split[0]
                 move_file_to_specific_datetime_folder(source_folder, target_folder, file_name, file_date, file_country, duplicate_folder)
                 continue
-
             file_path = os.path.join(source_folder, file_name)
             file_extension = os.path.splitext(file_path)[1].lower()
 
             # processing for videos
             if (file_extension == ".mov" or file_extension == ".mp4" or file_extension == ".mp3"):
                 print(file_name)
-                i += 1
-    
                 video_data = get_media_created(file_path)
                 video_date = video_data.split("T")[0].replace("-", "")
                 video_time = ((video_data.split("T")[1]).split(".")[0]).replace(":", "")
@@ -412,7 +455,6 @@ def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""
                 print("File name: " + file_name)
                 new_video_name = rename_file(source_folder, file_name, new_video_name)
                 move_file_to_specific_datetime_folder(source_folder, target_folder, new_video_name, video_date, "", duplicate_folder)
-                
                 continue
             
             image_data = extract_exif(file_path)
@@ -437,11 +479,8 @@ def sort_pictures_into_folders(source_folder, target_folder, duplicate_folder=""
                 image_geo_data = get_data_from_geocode(image_gps)
                 new_file_name = create_file_name(file_date, file_time, image_geo_data)
 
-            i += 1
-            if (i > 10):
-                break
             file_country = image_geo_data["country_code"]
-            rename_file(source_folder, file_name, new_file_name)
+            new_file_name = rename_file(source_folder, file_name, new_file_name)
             move_file_to_specific_datetime_folder(source_folder, target_folder, new_file_name, file_date, file_country, duplicate_folder)
 
         except Exception as e:
